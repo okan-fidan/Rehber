@@ -166,7 +166,9 @@ export default function SubGroupChat() {
               if (userRes.ok) {
                 return await userRes.json();
               }
-            } catch (e) {}
+            } catch (e) {
+              // Ignore member fetch errors
+            }
             return null;
           })
         );
