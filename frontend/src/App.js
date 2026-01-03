@@ -97,6 +97,10 @@ function AppRoutes() {
           <Route path="/subgroup/:id" element={<ProtectedRoute><SubGroupChat /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           
+          {/* Public Pages (No Auth Required) */}
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          
           {/* Default Route */}
           <Route path="/" element={<Navigate to="/communities" replace />} />
           <Route path="*" element={<Navigate to="/communities" replace />} />
