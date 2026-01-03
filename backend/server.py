@@ -365,8 +365,12 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
             "groups": [],
             "needsRegistration": True
         }
-    if '_id' in user:
-        del user['_id']
+    # MongoDB ObjectId'yi kaldır ve datetime'ları string'e çevir
+    user.pop('_id', None)
+    if 'createdAt' in user and hasattr(user['createdAt'], 'isoformat'):
+        user['createdAt'] = user['createdAt'].isoformat()
+    if 'restrictedUntil' in user and user['restrictedUntil'] and hasattr(user['restrictedUntil'], 'isoformat'):
+        user['restrictedUntil'] = user['restrictedUntil'].isoformat()
     return user
 
 @api_router.put("/user/profile")
