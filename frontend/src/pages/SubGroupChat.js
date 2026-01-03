@@ -446,7 +446,9 @@ export default function SubGroupChat() {
           body: JSON.stringify({ isTyping: false })
         });
       }, 2000);
-    } catch (error) {}
+    } catch (error) {
+      // Ignore typing indicator errors
+    }
   }, [id, user]);
 
   const handleLeaveGroup = async () => {
