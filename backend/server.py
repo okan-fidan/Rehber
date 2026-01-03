@@ -245,8 +245,12 @@ async def root():
 async def register_user(user_data: UserRegister, current_user: dict = Depends(get_current_user)):
     existing_user = await db.users.find_one({"uid": current_user['uid']})
     if existing_user:
-        if '_id' in existing_user:
-            del existing_user['_id']
+        # MongoDB ObjectId'yi kaldır ve datetime'ları string'e çevir
+        existing_user.pop('_id', None)
+        if 'createdAt' in existing_user and hasattr(existing_user['createdAt'], 'isoformat'):
+            existing_user['createdAt'] = existing_user['createdAt'].isoformat()
+        if 'restrictedUntil' in existing_user and existing_user['restrictedUntil'] and hasattr(existing_user['restrictedUntil'], 'isoformat'):
+            existing_user['restrictedUntil'] = existing_user['restrictedUntil'].isoformat()
         return existing_user
     
     is_admin = user_data.email.lower() == ADMIN_EMAIL.lower()
@@ -285,10 +289,17 @@ async def register_user(user_data: UserRegister, current_user: dict = Depends(ge
     user_dict = user_profile.dict()
     user_dict['communities'] = user_communities
     
+    # datetime'ları string'e çevir
+    if 'createdAt' in user_dict and hasattr(user_dict['createdAt'], 'isoformat'):
+        user_dict['createdAt'] = user_dict['createdAt'].isoformat()
+    
     await db.users.insert_one(user_dict)
     
     # Eski grup sistemini de destekle (geriye uyumluluk)
     await ensure_default_groups_exist(current_user['uid'], f"{user_data.firstName} {user_data.lastName}", is_admin)
+    
+    # Response için _id'yi kaldır (insert sonrası eklenir)
+    user_dict.pop('_id', None)
     
     return user_dict
 
