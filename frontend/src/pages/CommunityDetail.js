@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   ArrowLeft, Users, Plus, Crown, UserCheck, 
-  Megaphone, Settings, ChevronRight, Loader2,
-  Lock, Globe, MessageCircle, UserPlus
+  Megaphone, ChevronRight, Loader2,
+  Lock, Globe, MessageCircle, UserPlus, Settings,
+  ArrowUp, ArrowDown, Edit, Camera, X
 } from 'lucide-react';
 import {
   Dialog,
@@ -18,6 +19,7 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
+import { toast } from "../hooks/use-toast";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -27,13 +29,21 @@ export default function CommunityDetail() {
   const { user, userProfile } = useAuth();
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('groups'); // 'groups', 'announcements', 'members'
+  const [activeTab, setActiveTab] = useState('groups');
   const [announcements, setAnnouncements] = useState([]);
   const [newGroupDialog, setNewGroupDialog] = useState(false);
   const [newAnnouncementDialog, setNewAnnouncementDialog] = useState(false);
   const [newGroupData, setNewGroupData] = useState({ name: '', description: '', isPublic: true });
   const [newAnnouncement, setNewAnnouncement] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  
+  // Yeni state'ler - üye yönetimi ve grup düzenleme
+  const [membersDialog, setMembersDialog] = useState(false);
+  const [selectedSubgroup, setSelectedSubgroup] = useState(null);
+  const [subgroupMembers, setSubgroupMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [editGroupDialog, setEditGroupDialog] = useState(false);
+  const [editGroupData, setEditGroupData] = useState({ name: '', description: '', imageUrl: '' });
 
   useEffect(() => {
     fetchCommunity();
@@ -73,6 +83,23 @@ export default function CommunityDetail() {
     }
   };
 
+  const fetchSubgroupMembers = async (subgroupId) => {
+    setLoadingMembers(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${subgroupId}/members`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setSubgroupMembers(data);
+    } catch (error) {
+      console.error('Üyeler yüklenirken hata:', error);
+      toast({ title: "Hata", description: "Üyeler yüklenemedi", variant: "destructive" });
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
   const handleJoinCommunity = async () => {
     try {
       const token = await user.getIdToken();
@@ -80,30 +107,30 @@ export default function CommunityDetail() {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      toast({ title: "Başarılı", description: "Topluluğa katıldınız! Start grubuna eklendiniz." });
       fetchCommunity();
     } catch (error) {
-      console.error('Topluluğa katılırken hata:', error);
+      toast({ title: "Hata", description: "Katılım başarısız", variant: "destructive" });
     }
   };
 
   const handleLeaveCommunity = async () => {
     if (!window.confirm('Topluluktan ayrılmak istediğinize emin misiniz?')) return;
-    
     try {
       const token = await user.getIdToken();
       await fetch(`${BACKEND_URL}/api/communities/${id}/leave`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      toast({ title: "Başarılı", description: "Topluluktan ayrıldınız" });
       navigate('/communities');
     } catch (error) {
-      console.error('Topluluktan ayrılırken hata:', error);
+      toast({ title: "Hata", description: "Ayrılma başarısız", variant: "destructive" });
     }
   };
 
   const handleCreateSubGroup = async () => {
     if (!newGroupData.name.trim()) return;
-    
     setSubmitting(true);
     try {
       const token = await user.getIdToken();
@@ -115,11 +142,12 @@ export default function CommunityDetail() {
         },
         body: JSON.stringify(newGroupData)
       });
+      toast({ title: "Başarılı", description: "Alt grup oluşturuldu" });
       setNewGroupDialog(false);
       setNewGroupData({ name: '', description: '', isPublic: true });
       fetchCommunity();
     } catch (error) {
-      console.error('Alt grup oluşturulurken hata:', error);
+      toast({ title: "Hata", description: "Alt grup oluşturulamadı", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -127,7 +155,6 @@ export default function CommunityDetail() {
 
   const handleSendAnnouncement = async () => {
     if (!newAnnouncement.trim()) return;
-    
     setSubmitting(true);
     try {
       const token = await user.getIdToken();
@@ -139,33 +166,112 @@ export default function CommunityDetail() {
         },
         body: JSON.stringify({ content: newAnnouncement })
       });
+      toast({ title: "Başarılı", description: "Duyuru gönderildi" });
       setNewAnnouncementDialog(false);
       setNewAnnouncement('');
       fetchAnnouncements();
     } catch (error) {
-      console.error('Duyuru gönderilirken hata:', error);
+      toast({ title: "Hata", description: "Duyuru gönderilemedi", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleJoinSubGroup = async (subgroupId) => {
+  // Üye yükseltme
+  const handlePromoteMember = async (memberId) => {
+    if (!selectedSubgroup) return;
     try {
       const token = await user.getIdToken();
-      await fetch(`${BACKEND_URL}/api/subgroups/${subgroupId}/request-join`, {
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/promote/${memberId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      fetchCommunity();
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Başarılı", description: data.message });
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      } else {
+        toast({ title: "Hata", description: data.detail || "Yükseltme başarısız", variant: "destructive" });
+      }
     } catch (error) {
-      console.error('Gruba katılırken hata:', error);
+      toast({ title: "Hata", description: "Yükseltme başarısız", variant: "destructive" });
     }
   };
+
+  // Üye düşürme
+  const handleDemoteMember = async (memberId) => {
+    if (!selectedSubgroup) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/demote/${memberId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Başarılı", description: data.message });
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      } else {
+        toast({ title: "Hata", description: data.detail || "Düşürme başarısız", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "Düşürme başarısız", variant: "destructive" });
+    }
+  };
+
+  // Grup düzenleme
+  const handleUpdateSubgroup = async () => {
+    if (!selectedSubgroup) return;
+    setSubmitting(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editGroupData)
+      });
+      if (res.ok) {
+        toast({ title: "Başarılı", description: "Grup güncellendi" });
+        setEditGroupDialog(false);
+        fetchCommunity();
+      } else {
+        const data = await res.json();
+        toast({ title: "Hata", description: data.detail || "Güncelleme başarısız", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "Güncelleme başarısız", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openMembersDialog = (subgroup) => {
+    setSelectedSubgroup(subgroup);
+    fetchSubgroupMembers(subgroup.id);
+    setMembersDialog(true);
+  };
+
+  const openEditDialog = (subgroup) => {
+    setSelectedSubgroup(subgroup);
+    setEditGroupData({
+      name: subgroup.name,
+      description: subgroup.description || '',
+      imageUrl: subgroup.imageUrl || ''
+    });
+    setEditGroupDialog(true);
+  };
+
+  const isSuperAdmin = community?.isSuperAdmin || userProfile?.isAdmin || userProfile?.email?.toLowerCase() === 'metaticaretim@gmail.com';
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0e1621] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#4A90E2] animate-spin" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#4A90E2]" />
       </div>
     );
   }
@@ -178,31 +284,46 @@ export default function CommunityDetail() {
     );
   }
 
-  const isSuperAdmin = community.isSuperAdmin || userProfile?.isAdmin;
+  // Seviye renklerini belirle
+  const getLevelColor = (level) => {
+    switch(level) {
+      case 1: return 'bg-green-500';
+      case 2: return 'bg-blue-500';
+      case 3: return 'bg-purple-500';
+      case 4: return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#0e1621]" data-testid="community-detail-page">
+    <div className="min-h-screen bg-[#0e1621] pb-20">
       {/* Header */}
       <div className="bg-[#17212b] border-b border-gray-800">
         <div className="p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <button 
-              onClick={() => navigate('/communities')}
-              className="p-2 hover:bg-[#0e1621] rounded-full transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-400" />
-            </button>
-            <div className="flex-1">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="flex items-center gap-2 text-gray-400 hover:text-white mb-4"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Geri</span>
+          </button>
+
+          <div className="flex items-start gap-4 mb-4">
+            <img
+              src={community.imageUrl}
+              alt={community.name}
+              className="w-16 h-16 rounded-xl object-cover"
+            />
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-white">{community.name}</h1>
+                <h1 className="text-xl font-bold text-white truncate">{community.name}</h1>
                 {isSuperAdmin && (
-                  <Crown className="w-5 h-5 text-yellow-500" />
+                  <Crown className="w-5 h-5 text-yellow-500 flex-shrink-0" />
                 )}
               </div>
               <p className="text-sm text-gray-400">{community.memberCount} üye</p>
             </div>
             
-            {/* Actions */}
             {community.isMember ? (
               <div className="flex gap-2">
                 {!isSuperAdmin && (
@@ -223,14 +344,13 @@ export default function CommunityDetail() {
             )}
           </div>
 
-          {/* Description */}
           {community.description && (
             <p className="text-gray-400 text-sm mb-4">{community.description}</p>
           )}
 
           {/* Admin Actions */}
           {isSuperAdmin && (
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 flex-wrap">
               <Dialog open={newGroupDialog} onOpenChange={setNewGroupDialog}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-2" data-testid="create-subgroup-btn">
@@ -250,7 +370,6 @@ export default function CommunityDetail() {
                         onChange={(e) => setNewGroupData({...newGroupData, name: e.target.value})}
                         placeholder="Örn: Teknoloji Girişimcileri"
                         className="bg-[#0e1621] border-gray-700 text-white"
-                        data-testid="new-group-name"
                       />
                     </div>
                     <div>
@@ -260,7 +379,6 @@ export default function CommunityDetail() {
                         onChange={(e) => setNewGroupData({...newGroupData, description: e.target.value})}
                         placeholder="Grup hakkında kısa bir açıklama..."
                         className="bg-[#0e1621] border-gray-700 text-white"
-                        data-testid="new-group-description"
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -268,14 +386,12 @@ export default function CommunityDetail() {
                       <Switch
                         checked={newGroupData.isPublic}
                         onCheckedChange={(checked) => setNewGroupData({...newGroupData, isPublic: checked})}
-                        data-testid="new-group-public"
                       />
                     </div>
                     <Button 
                       onClick={handleCreateSubGroup} 
                       disabled={submitting || !newGroupData.name.trim()}
                       className="w-full"
-                      data-testid="submit-new-group"
                     >
                       {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Oluştur'}
                     </Button>
@@ -285,9 +401,9 @@ export default function CommunityDetail() {
 
               <Dialog open={newAnnouncementDialog} onOpenChange={setNewAnnouncementDialog}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-2" data-testid="send-announcement-btn">
+                  <Button size="sm" variant="outline" className="gap-2">
                     <Megaphone className="w-4 h-4" />
-                    Duyuru Gönder
+                    Duyuru Yap
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="bg-[#17212b] border-gray-700">
@@ -299,14 +415,12 @@ export default function CommunityDetail() {
                       value={newAnnouncement}
                       onChange={(e) => setNewAnnouncement(e.target.value)}
                       placeholder="Duyuru içeriği..."
-                      className="bg-[#0e1621] border-gray-700 text-white min-h-[120px]"
-                      data-testid="announcement-content"
+                      className="bg-[#0e1621] border-gray-700 text-white min-h-[100px]"
                     />
                     <Button 
                       onClick={handleSendAnnouncement} 
                       disabled={submitting || !newAnnouncement.trim()}
                       className="w-full"
-                      data-testid="submit-announcement"
                     >
                       {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Gönder'}
                     </Button>
@@ -352,11 +466,6 @@ export default function CommunityDetail() {
               <div className="text-center py-12">
                 <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400">Henüz alt grup yok</p>
-                {isSuperAdmin && (
-                  <p className="text-gray-500 text-sm mt-2">
-                    Yukarıdaki &quot;Alt Grup Ekle&quot; butonunu kullanarak yeni grup oluşturabilirsiniz.
-                  </p>
-                )}
               </div>
             ) : (
               community.subGroupsList?.map((subgroup) => (
@@ -366,17 +475,23 @@ export default function CommunityDetail() {
                   data-testid={`subgroup-${subgroup.id}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-[#4A90E2] rounded-full flex items-center justify-center">
-                      {subgroup.isPublic ? (
-                        <Globe className="w-6 h-6 text-white" />
+                    {/* Grup Fotoğrafı */}
+                    <div className={`w-14 h-14 ${getLevelColor(subgroup.level)} rounded-full flex items-center justify-center overflow-hidden`}>
+                      {subgroup.imageUrl ? (
+                        <img src={subgroup.imageUrl} alt={subgroup.name} className="w-full h-full object-cover" />
                       ) : (
-                        <Lock className="w-6 h-6 text-white" />
+                        <span className="text-2xl">{subgroup.name?.charAt(0)}</span>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="text-white font-semibold truncate">{subgroup.name}</h3>
+                        {subgroup.level && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${getLevelColor(subgroup.level)} text-white`}>
+                            Seviye {subgroup.level}
+                          </span>
+                        )}
                         {subgroup.isMember && (
                           <UserCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
                         )}
@@ -390,31 +505,62 @@ export default function CommunityDetail() {
                       <p className="text-xs text-gray-500 mt-1">{subgroup.memberCount} üye</p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      {/* Yönetici Ayarları */}
+                      {(isSuperAdmin || subgroup.isGroupAdmin) && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openMembersDialog(subgroup)}
+                            className="text-gray-400 hover:text-white p-2"
+                            title="Üyeleri Yönet"
+                          >
+                            <Users className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditDialog(subgroup)}
+                            className="text-gray-400 hover:text-white p-2"
+                            title="Grubu Düzenle"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                      
                       {subgroup.isMember ? (
                         <Button
                           size="sm"
                           onClick={() => navigate(`/subgroup/${subgroup.id}`)}
-                          className="gap-2"
+                          className="gap-1"
                         >
                           <MessageCircle className="w-4 h-4" />
-                          Sohbet
+                          Gir
                         </Button>
-                      ) : subgroup.hasPendingRequest ? (
-                        <span className="text-xs text-yellow-500 px-3 py-1 bg-yellow-500/10 rounded-full">
-                          İstek Bekliyor
-                        </span>
-                      ) : (
+                      ) : subgroup.isPublic ? (
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleJoinSubGroup(subgroup.id)}
-                          className="gap-2"
-                          data-testid={`join-subgroup-${subgroup.id}`}
+                          onClick={async () => {
+                            try {
+                              const token = await user.getIdToken();
+                              await fetch(`${BACKEND_URL}/api/subgroups/${subgroup.id}/join`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${token}` }
+                              });
+                              toast({ title: "Başarılı", description: "Gruba katıldınız" });
+                              fetchCommunity();
+                            } catch (error) {
+                              toast({ title: "Hata", description: "Katılım başarısız", variant: "destructive" });
+                            }
+                          }}
                         >
                           <UserPlus className="w-4 h-4" />
-                          {subgroup.isPublic ? 'Katıl' : 'İstek Gönder'}
                         </Button>
+                      ) : (
+                        <Lock className="w-5 h-5 text-gray-500" />
                       )}
                     </div>
                   </div>
@@ -433,22 +579,16 @@ export default function CommunityDetail() {
               </div>
             ) : (
               announcements.map((announcement) => (
-                <div
-                  key={announcement.id}
-                  className="bg-[#17212b] rounded-xl p-4"
-                >
+                <div key={announcement.id} className="bg-[#17212b] rounded-xl p-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-[#4A90E2] rounded-full flex items-center justify-center flex-shrink-0">
-                      <Megaphone className="w-5 h-5 text-white" />
-                    </div>
+                    <Megaphone className="w-5 h-5 text-[#4A90E2] mt-1 flex-shrink-0" />
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-white font-semibold">{announcement.senderName}</span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(announcement.timestamp).toLocaleDateString('tr-TR')}
-                        </span>
+                      <p className="text-white whitespace-pre-wrap">{announcement.content}</p>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                        <span>{announcement.senderName}</span>
+                        <span>•</span>
+                        <span>{new Date(announcement.createdAt).toLocaleDateString('tr-TR')}</span>
                       </div>
-                      <p className="text-gray-300 whitespace-pre-wrap">{announcement.content}</p>
                     </div>
                   </div>
                 </div>
@@ -457,6 +597,134 @@ export default function CommunityDetail() {
           </div>
         )}
       </div>
+
+      {/* Üye Yönetimi Dialog */}
+      <Dialog open={membersDialog} onOpenChange={setMembersDialog}>
+        <DialogContent className="bg-[#17212b] border-gray-700 max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              {selectedSubgroup?.name} - Üyeler
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {loadingMembers ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-[#4A90E2]" />
+              </div>
+            ) : subgroupMembers.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">Henüz üye yok</p>
+            ) : (
+              subgroupMembers.map((member) => (
+                <div key={member.uid} className="flex items-center gap-3 p-3 bg-[#0e1621] rounded-lg">
+                  <div className="w-10 h-10 bg-[#4A90E2] rounded-full flex items-center justify-center overflow-hidden">
+                    {member.profileImageUrl ? (
+                      <img src={member.profileImageUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-semibold">
+                        {member.firstName?.charAt(0)}{member.lastName?.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium truncate">
+                      {member.firstName} {member.lastName}
+                      {member.isGroupAdmin && <Crown className="w-4 h-4 text-yellow-500 inline ml-1" />}
+                    </p>
+                    <p className="text-gray-500 text-xs truncate">{member.city}</p>
+                  </div>
+                  {(isSuperAdmin || selectedSubgroup?.isGroupAdmin) && member.uid !== user?.uid && (
+                    <div className="flex gap-1">
+                      {selectedSubgroup?.level < 4 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handlePromoteMember(member.uid)}
+                          className="text-green-500 hover:text-green-400 hover:bg-green-500/10 p-2"
+                          title="Üst Gruba Yükselt"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {selectedSubgroup?.level > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDemoteMember(member.uid)}
+                          className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2"
+                          title="Alt Gruba Düşür"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grup Düzenleme Dialog */}
+      <Dialog open={editGroupDialog} onOpenChange={setEditGroupDialog}>
+        <DialogContent className="bg-[#17212b] border-gray-700">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Grup Ayarları
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-white">Grup Adı</Label>
+              <Input
+                value={editGroupData.name}
+                onChange={(e) => setEditGroupData({...editGroupData, name: e.target.value})}
+                placeholder="Grup adı"
+                className="bg-[#0e1621] border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-white">Açıklama</Label>
+              <Textarea
+                value={editGroupData.description}
+                onChange={(e) => setEditGroupData({...editGroupData, description: e.target.value})}
+                placeholder="Grup açıklaması..."
+                className="bg-[#0e1621] border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-white">Profil Fotoğrafı URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={editGroupData.imageUrl}
+                  onChange={(e) => setEditGroupData({...editGroupData, imageUrl: e.target.value})}
+                  placeholder="https://example.com/image.jpg"
+                  className="bg-[#0e1621] border-gray-700 text-white flex-1"
+                />
+                {editGroupData.imageUrl && (
+                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#0e1621]">
+                    <img 
+                      src={editGroupData.imageUrl} 
+                      alt="Önizleme" 
+                      className="w-full h-full object-cover"
+                      onError={(e) => e.target.style.display = 'none'}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <Button 
+              onClick={handleUpdateSubgroup} 
+              disabled={submitting}
+              className="w-full"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Kaydet'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
