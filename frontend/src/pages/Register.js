@@ -85,7 +85,7 @@ export default function Register() {
             <UserPlus className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white">Kayıt Ol</h1>
-          <p className="text-gray-400 mt-1 text-sm">Network Solution'a katılın</p>
+          <p className="text-gray-400 mt-1 text-sm">Network Solution&apos;a katılın</p>
         </div>
 
         <form onSubmit={handleRegister} className="space-y-3">
