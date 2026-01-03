@@ -1252,6 +1252,14 @@ async def join_group(group_id: str, current_user: dict = Depends(get_current_use
 
 # ==================== COMMUNITY (TOPLULUK) API'LERİ ====================
 
+# Varsayılan alt grup tipleri ve sıraları
+DEFAULT_SUBGROUPS = [
+    {"name": "Start", "description": "Yeni üyeler için başlangıç grubu", "level": 1, "icon": "🚀"},
+    {"name": "Gelişim", "description": "Gelişmekte olan üyeler grubu", "level": 2, "icon": "📈"},
+    {"name": "Değerlendirme", "description": "Değerlendirme aşamasındaki üyeler", "level": 3, "icon": "⭐"},
+    {"name": "Ana Grup", "description": "Ana üyeler grubu", "level": 4, "icon": "👑"}
+]
+
 # 81 şehir için toplulukları oluştur (uygulama başlatıldığında çalışır)
 async def initialize_city_communities():
     """81 şehir için toplulukları oluşturur"""
@@ -1275,6 +1283,29 @@ async def initialize_city_communities():
             }
             await db.announcement_channels.insert_one(announcement_channel)
             
+            subgroup_ids = []
+            
+            # 4 varsayılan alt grup oluştur
+            for sg_template in DEFAULT_SUBGROUPS:
+                sg_id = f"subgroup-{community_id}-{sg_template['name'].lower().replace(' ', '-').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g')}"
+                subgroup = {
+                    "id": sg_id,
+                    "communityId": community_id,
+                    "name": f"{sg_template['icon']} {sg_template['name']}",
+                    "description": f"{city} - {sg_template['description']}",
+                    "imageUrl": None,
+                    "level": sg_template['level'],
+                    "groupAdmins": [admin_uid] if admin_uid != "system" else [],
+                    "members": [admin_uid] if admin_uid != "system" and sg_template['level'] == 1 else [],
+                    "pendingRequests": [],
+                    "isPublic": sg_template['level'] == 1,  # Sadece Start grubu herkese açık
+                    "createdBy": admin_uid,
+                    "createdByName": admin_name,
+                    "createdAt": datetime.utcnow()
+                }
+                await db.subgroups.insert_one(subgroup)
+                subgroup_ids.append(sg_id)
+            
             # Topluluk oluştur
             new_community = {
                 "id": community_id,
@@ -1285,39 +1316,44 @@ async def initialize_city_communities():
                 "coverImageUrl": None,
                 "superAdmins": [admin_uid] if admin_uid != "system" else [],
                 "members": [admin_uid] if admin_uid != "system" else [],
-                "subGroups": [],
+                "subGroups": subgroup_ids,
                 "announcementChannelId": announcement_id,
                 "createdBy": admin_uid,
                 "createdByName": admin_name,
                 "createdAt": datetime.utcnow()
             }
             await db.communities.insert_one(new_community)
+        else:
+            # Mevcut toplulukları güncelle - eksik alt grupları ekle
+            community_id = existing['id']
+            existing_subgroups = await db.subgroups.find({"communityId": community_id}).to_list(10)
+            existing_names = [sg.get('name', '').replace('🚀 ', '').replace('📈 ', '').replace('⭐ ', '').replace('👑 ', '') for sg in existing_subgroups]
             
-            # Varsayılan alt grup oluştur - Genel Sohbet
-            default_subgroup_id = f"subgroup-{community_id}-genel"
-            default_subgroup = {
-                "id": default_subgroup_id,
-                "communityId": community_id,
-                "name": "Genel Sohbet",
-                "description": f"{city} genel sohbet grubu",
-                "imageUrl": None,
-                "groupAdmins": [admin_uid] if admin_uid != "system" else [],
-                "members": [admin_uid] if admin_uid != "system" else [],
-                "pendingRequests": [],
-                "isPublic": True,
-                "createdBy": admin_uid,
-                "createdByName": admin_name,
-                "createdAt": datetime.utcnow()
-            }
-            await db.subgroups.insert_one(default_subgroup)
-            
-            # Alt grubu topluluğa ekle
-            await db.communities.update_one(
-                {"id": community_id},
-                {"$addToSet": {"subGroups": default_subgroup_id}}
-            )
+            for sg_template in DEFAULT_SUBGROUPS:
+                if sg_template['name'] not in existing_names:
+                    sg_id = f"subgroup-{community_id}-{sg_template['name'].lower().replace(' ', '-').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g')}"
+                    subgroup = {
+                        "id": sg_id,
+                        "communityId": community_id,
+                        "name": f"{sg_template['icon']} {sg_template['name']}",
+                        "description": f"{existing['city']} - {sg_template['description']}",
+                        "imageUrl": None,
+                        "level": sg_template['level'],
+                        "groupAdmins": existing.get('superAdmins', []),
+                        "members": [],
+                        "pendingRequests": [],
+                        "isPublic": sg_template['level'] == 1,
+                        "createdBy": admin_uid,
+                        "createdByName": admin_name,
+                        "createdAt": datetime.utcnow()
+                    }
+                    await db.subgroups.insert_one(subgroup)
+                    await db.communities.update_one(
+                        {"id": community_id},
+                        {"$addToSet": {"subGroups": sg_id}}
+                    )
     
-    print(f"✅ {len(TURKISH_CITIES)} şehir topluluğu başarıyla oluşturuldu/kontrol edildi")
+    logging.info(f"✅ Şehir toplulukları başarıyla kontrol edildi/oluşturuldu")
 
 # Tüm toplulukları getir
 @api_router.get("/communities")
