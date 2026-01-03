@@ -410,7 +410,7 @@ async def get_messages(group_id: str, current_user: dict = Depends(get_current_u
         if msg.get('deletedFor') and current_user['uid'] in msg.get('deletedFor', []):
             msg['isDeleted'] = True
             msg['content'] = 'Bu mesaj silindi'
-    return messages
+    return clean_doc(messages)
 
 @api_router.post("/messages")
 async def send_message(message: dict, current_user: dict = Depends(get_current_user)):
@@ -536,7 +536,7 @@ async def get_pinned_messages_list(group_id: str, current_user: dict = Depends(g
     for msg in messages:
         if '_id' in msg:
             del msg['_id']
-    return messages
+    return clean_doc(messages)
 
 @api_router.get("/posts")
 async def get_posts(current_user: dict = Depends(get_current_user)):
@@ -548,7 +548,7 @@ async def get_posts(current_user: dict = Depends(get_current_user)):
         post['isLiked'] = current_user['uid'] in post.get('likes', [])
         post['likeCount'] = len(post.get('likes', []))
         post['commentCount'] = len(post.get('comments', []))
-    return posts
+    return clean_doc(posts)
 
 @api_router.post("/posts")
 async def create_post(post: dict, current_user: dict = Depends(get_current_user)):
@@ -597,7 +597,7 @@ async def get_post_comments(post_id: str, current_user: dict = Depends(get_curre
             del comment['_id']
         comment['isLiked'] = current_user['uid'] in comment.get('likes', [])
         comment['likeCount'] = len(comment.get('likes', []))
-    return comments
+    return clean_doc(comments)
 
 # Add comment to a post
 @api_router.post("/posts/{post_id}/comments")
@@ -700,7 +700,7 @@ async def get_services(current_user: dict = Depends(get_current_user)):
     for service in services:
         if '_id' in service:
             del service['_id']
-    return services
+    return clean_doc(services)
 
 @api_router.post("/services")
 async def create_service(service: dict, current_user: dict = Depends(get_current_user)):
@@ -725,7 +725,7 @@ async def get_users(current_user: dict = Depends(get_current_user)):
     for u in users:
         if '_id' in u:
             del u['_id']
-    return users
+    return clean_doc(users)
 
 @api_router.get("/private-messages/{other_user_id}")
 async def get_private_messages(other_user_id: str, current_user: dict = Depends(get_current_user)):
@@ -745,7 +745,7 @@ async def get_private_messages(other_user_id: str, current_user: dict = Depends(
         if msg.get('deletedFor') and current_user['uid'] in msg.get('deletedFor', []):
             msg['isDeleted'] = True
             msg['content'] = 'Bu mesaj silindi'
-    return messages
+    return clean_doc(messages)
 
 @api_router.post("/private-messages")
 async def send_private_message(message: dict, current_user: dict = Depends(get_current_user)):
@@ -782,7 +782,7 @@ async def get_my_posts(current_user: dict = Depends(get_current_user)):
     for post in posts:
         if '_id' in post:
             del post['_id']
-    return posts
+    return clean_doc(posts)
 
 @api_router.delete("/posts/{post_id}")
 async def delete_post(post_id: str, current_user: dict = Depends(get_current_user)):
@@ -817,7 +817,7 @@ async def get_all_groups(current_user: dict = Depends(get_current_user)):
         group['memberCount'] = len(group.get('members', []))
         group['isAdmin'] = current_user['uid'] in group.get('admins', [])
     
-    return groups
+    return clean_doc(groups)
 
 @api_router.get("/public-groups")
 async def get_public_groups():
@@ -828,7 +828,7 @@ async def get_public_groups():
             del group['_id']
         group['memberCount'] = len(group.get('members', []))
     
-    return groups
+    return clean_doc(groups)
 
 @api_router.post("/custom-groups")
 async def create_custom_group(group_data: dict, current_user: dict = Depends(get_current_user)):
@@ -876,7 +876,7 @@ async def get_custom_groups(current_user: dict = Depends(get_current_user)):
     for group in groups:
         if '_id' in group:
             del group['_id']
-    return groups
+    return clean_doc(groups)
 
 @api_router.delete("/custom-groups/{group_id}")
 async def delete_custom_group(group_id: str, current_user: dict = Depends(get_current_user)):
@@ -918,7 +918,7 @@ async def get_admin_groups(current_user: dict = Depends(get_current_user)):
             del group['_id']
         group['memberCount'] = len(group.get('members', []))
     
-    return groups
+    return clean_doc(groups)
 
 @api_router.get("/admin/groups/{group_id}/members")
 async def get_group_members(group_id: str, current_user: dict = Depends(get_current_user)):
@@ -1110,7 +1110,7 @@ async def get_pinned_messages(group_id: str, current_user: dict = Depends(get_cu
         if '_id' in msg:
             del msg['_id']
     
-    return messages
+    return clean_doc(messages)
 
 @api_router.post("/admin/groups/{group_id}/polls")
 async def create_poll(group_id: str, poll_data: dict, current_user: dict = Depends(get_current_user)):
@@ -1227,7 +1227,7 @@ async def get_my_groups(current_user: dict = Depends(get_current_user)):
         group['isAdmin'] = current_user['uid'] in group.get('admins', [])
         group['memberCount'] = len(group.get('members', []))
     
-    return groups
+    return clean_doc(groups)
 
 @api_router.post("/groups/{group_id}/join")
 async def join_group(group_id: str, current_user: dict = Depends(get_current_user)):
@@ -1332,7 +1332,7 @@ async def get_all_communities(current_user: dict = Depends(get_current_user)):
         community['isSuperAdmin'] = current_user['uid'] in community.get('superAdmins', [])
         community['subGroupCount'] = len(community.get('subGroups', []))
     
-    return communities
+    return clean_doc(communities)
 
 # Kullanıcının topluluklarını getir
 @api_router.get("/communities/my")
@@ -1346,7 +1346,7 @@ async def get_my_communities(current_user: dict = Depends(get_current_user)):
         community['isSuperAdmin'] = current_user['uid'] in community.get('superAdmins', [])
         community['subGroupCount'] = len(community.get('subGroups', []))
     
-    return communities
+    return clean_doc(communities)
 
 # Tek topluluk detayı
 @api_router.get("/communities/{community_id}")
@@ -1644,7 +1644,7 @@ async def get_announcements(community_id: str, current_user: dict = Depends(get_
         if '_id' in msg:
             del msg['_id']
     
-    return messages
+    return clean_doc(messages)
 
 # Duyuru gönder (sadece süper admin)
 @api_router.post("/communities/{community_id}/announcements")
@@ -1723,7 +1723,7 @@ async def get_subgroup_messages(subgroup_id: str, current_user: dict = Depends(g
         {"$addToSet": {"readBy": current_user['uid']}, "$set": {"status": "read"}}
     )
     
-    return messages
+    return clean_doc(messages)
 
 # Alt gruba mesaj gönder
 @api_router.post("/subgroups/{subgroup_id}/messages")
@@ -2263,7 +2263,7 @@ async def admin_get_communities(current_user: dict = Depends(get_current_user)):
         c['superAdminCount'] = len(c.get('superAdmins', []))
         c['subGroupCount'] = len(c.get('subGroups', []))
     
-    return communities
+    return clean_doc(communities)
 
 # Topluluk detayı (admin)
 @api_router.get("/admin/communities/{community_id}")
