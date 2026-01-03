@@ -1429,6 +1429,17 @@ async def join_community(community_id: str, current_user: dict = Depends(get_cur
         {"$addToSet": {"communities": community_id}}
     )
     
+    # Kullanıcıyı Start grubuna otomatik ekle
+    start_subgroup = await db.subgroups.find_one({
+        "communityId": community_id,
+        "level": 1
+    })
+    if start_subgroup:
+        await db.subgroups.update_one(
+            {"id": start_subgroup['id']},
+            {"$addToSet": {"members": current_user['uid']}}
+        )
+    
     return {"message": "Topluluğa katıldınız"}
 
 # Topluluktan ayrıl
@@ -1459,6 +1470,149 @@ async def leave_community(community_id: str, current_user: dict = Depends(get_cu
     )
     
     return {"message": "Topluluktan ayrıldınız"}
+
+# ==================== ÜYE YÜKSELTME API'LERİ ====================
+
+# Üyeyi bir üst seviye gruba yükselt
+@api_router.post("/subgroups/{subgroup_id}/promote/{user_id}")
+async def promote_member(subgroup_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    subgroup = await db.subgroups.find_one({"id": subgroup_id})
+    if not subgroup:
+        raise HTTPException(status_code=404, detail="Alt grup bulunamadı")
+    
+    community = await db.communities.find_one({"id": subgroup['communityId']})
+    if not community:
+        raise HTTPException(status_code=404, detail="Topluluk bulunamadı")
+    
+    # Yetki kontrolü
+    user = await db.users.find_one({"uid": current_user['uid']})
+    is_super_admin = current_user['uid'] in community.get('superAdmins', [])
+    is_group_admin = current_user['uid'] in subgroup.get('groupAdmins', [])
+    is_global_admin = user.get('isAdmin', False) or user.get('email', '').lower() == ADMIN_EMAIL.lower()
+    
+    if not is_super_admin and not is_group_admin and not is_global_admin:
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    # Mevcut seviye
+    current_level = subgroup.get('level', 1)
+    
+    # Bir üst seviye grubu bul
+    next_subgroup = await db.subgroups.find_one({
+        "communityId": subgroup['communityId'],
+        "level": current_level + 1
+    })
+    
+    if not next_subgroup:
+        raise HTTPException(status_code=400, detail="Üst seviye grup bulunamadı")
+    
+    # Üyeyi mevcut gruptan çıkar ve üst gruba ekle
+    await db.subgroups.update_one(
+        {"id": subgroup_id},
+        {"$pull": {"members": user_id}}
+    )
+    
+    await db.subgroups.update_one(
+        {"id": next_subgroup['id']},
+        {"$addToSet": {"members": user_id}}
+    )
+    
+    return {"message": f"Üye {next_subgroup['name']} grubuna yükseltildi", "newGroupId": next_subgroup['id']}
+
+# Üyeyi bir alt seviye gruba düşür
+@api_router.post("/subgroups/{subgroup_id}/demote/{user_id}")
+async def demote_member(subgroup_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    subgroup = await db.subgroups.find_one({"id": subgroup_id})
+    if not subgroup:
+        raise HTTPException(status_code=404, detail="Alt grup bulunamadı")
+    
+    community = await db.communities.find_one({"id": subgroup['communityId']})
+    if not community:
+        raise HTTPException(status_code=404, detail="Topluluk bulunamadı")
+    
+    # Yetki kontrolü
+    user = await db.users.find_one({"uid": current_user['uid']})
+    is_super_admin = current_user['uid'] in community.get('superAdmins', [])
+    is_group_admin = current_user['uid'] in subgroup.get('groupAdmins', [])
+    is_global_admin = user.get('isAdmin', False) or user.get('email', '').lower() == ADMIN_EMAIL.lower()
+    
+    if not is_super_admin and not is_group_admin and not is_global_admin:
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    # Mevcut seviye
+    current_level = subgroup.get('level', 1)
+    
+    if current_level <= 1:
+        raise HTTPException(status_code=400, detail="Üye zaten en alt seviyede")
+    
+    # Bir alt seviye grubu bul
+    prev_subgroup = await db.subgroups.find_one({
+        "communityId": subgroup['communityId'],
+        "level": current_level - 1
+    })
+    
+    if not prev_subgroup:
+        raise HTTPException(status_code=400, detail="Alt seviye grup bulunamadı")
+    
+    # Üyeyi mevcut gruptan çıkar ve alt gruba ekle
+    await db.subgroups.update_one(
+        {"id": subgroup_id},
+        {"$pull": {"members": user_id}}
+    )
+    
+    await db.subgroups.update_one(
+        {"id": prev_subgroup['id']},
+        {"$addToSet": {"members": user_id}}
+    )
+    
+    return {"message": f"Üye {prev_subgroup['name']} grubuna düşürüldü", "newGroupId": prev_subgroup['id']}
+
+# Alt grup bilgilerini güncelle (foto, açıklama)
+@api_router.put("/subgroups/{subgroup_id}")
+async def update_subgroup(subgroup_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
+    subgroup = await db.subgroups.find_one({"id": subgroup_id})
+    if not subgroup:
+        raise HTTPException(status_code=404, detail="Alt grup bulunamadı")
+    
+    community = await db.communities.find_one({"id": subgroup['communityId']})
+    if not community:
+        raise HTTPException(status_code=404, detail="Topluluk bulunamadı")
+    
+    # Yetki kontrolü
+    user = await db.users.find_one({"uid": current_user['uid']})
+    is_super_admin = current_user['uid'] in community.get('superAdmins', [])
+    is_group_admin = current_user['uid'] in subgroup.get('groupAdmins', [])
+    is_global_admin = user.get('isAdmin', False) or user.get('email', '').lower() == ADMIN_EMAIL.lower()
+    
+    if not is_super_admin and not is_group_admin and not is_global_admin:
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    # Güncellenebilir alanlar
+    allowed_fields = ['name', 'description', 'imageUrl']
+    update_data = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if update_data:
+        await db.subgroups.update_one(
+            {"id": subgroup_id},
+            {"$set": update_data}
+        )
+    
+    return {"message": "Alt grup güncellendi"}
+
+# Alt grup üyelerini getir
+@api_router.get("/subgroups/{subgroup_id}/members")
+async def get_subgroup_members(subgroup_id: str, current_user: dict = Depends(get_current_user)):
+    subgroup = await db.subgroups.find_one({"id": subgroup_id})
+    if not subgroup:
+        raise HTTPException(status_code=404, detail="Alt grup bulunamadı")
+    
+    member_ids = subgroup.get('members', [])
+    members = await db.users.find({"uid": {"$in": member_ids}}).to_list(1000)
+    
+    for member in members:
+        member.pop('_id', None)
+        member['isGroupAdmin'] = member['uid'] in subgroup.get('groupAdmins', [])
+    
+    return clean_doc(members)
 
 # ==================== ALT GRUP API'LERİ ====================
 
