@@ -1,21 +1,40 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import re
+import html
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from firebase_config import verify_firebase_token
 import socketio
 from bson import ObjectId
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import bleach
+import validators
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Logging configuration - don't log sensitive data
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -26,7 +45,16 @@ db = client[os.environ['DB_NAME']]
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
 # Create the main app without a prefix
-app = FastAPI()
+app = FastAPI(
+    title="Network Solution API",
+    docs_url=None,  # Disable docs in production
+    redoc_url=None,  # Disable redoc in production
+    openapi_url=None  # Disable openapi schema in production
+)
+
+# Rate limit error handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -40,6 +68,75 @@ ADMIN_EMAIL = "metaticaretim@gmail.com"
 # Default groups
 TURKEY_GROUP_ID = "turkiye-grubu"
 BURSA_GROUP_ID = "bursa-grubu"
+
+# ==================== SECURITY HELPERS ====================
+
+# Allowed HTML tags for sanitization
+ALLOWED_TAGS = ['b', 'i', 'u', 'em', 'strong', 'a', 'br', 'p']
+ALLOWED_ATTRIBUTES = {'a': ['href', 'title']}
+
+def sanitize_input(text: str, max_length: int = 10000) -> str:
+    """Sanitize user input to prevent XSS and injection attacks"""
+    if not text:
+        return ""
+    # Truncate to max length
+    text = text[:max_length]
+    # Remove null bytes
+    text = text.replace('\x00', '')
+    # Clean HTML/XSS
+    text = bleach.clean(text, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True)
+    return text.strip()
+
+def sanitize_html(text: str) -> str:
+    """Escape all HTML for plain text fields"""
+    if not text:
+        return ""
+    return html.escape(text)
+
+def validate_email(email: str) -> bool:
+    """Validate email format"""
+    if not email:
+        return False
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(email_regex, email))
+
+def validate_url(url: str) -> bool:
+    """Validate URL format"""
+    if not url:
+        return True  # Empty is OK
+    return validators.url(url) is True
+
+def validate_phone(phone: str) -> bool:
+    """Validate phone number format"""
+    if not phone:
+        return True  # Empty is OK
+    phone_regex = r'^[\d\s\+\-\(\)]{7,20}$'
+    return bool(re.match(phone_regex, phone))
+
+def validate_uuid(id_str: str) -> bool:
+    """Validate UUID format"""
+    if not id_str:
+        return False
+    uuid_regex = r'^[a-zA-Z0-9\-_]+$'
+    return bool(re.match(uuid_regex, id_str)) and len(id_str) <= 100
+
+# Security middleware for adding headers
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Remove server header
+        response.headers.pop("server", None)
+        return response
+
+# Add security middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Helper function to clean MongoDB documents for JSON serialization
 def clean_doc(doc):
@@ -62,7 +159,7 @@ def clean_doc(doc):
         return doc
     return doc
 
-# Models
+# Models with validation
 class UserProfile(BaseModel):
     uid: str
     email: str
