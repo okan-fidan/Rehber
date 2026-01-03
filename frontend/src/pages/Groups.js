@@ -449,7 +449,7 @@ export default function Groups() {
               <div className="text-center py-16">
                 <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-white font-semibold">Sonuç bulunamadı</p>
-                <p className="text-gray-500 text-sm">"{searchQuery}" için sonuç yok</p>
+                <p className="text-gray-500 text-sm">&quot;{searchQuery}&quot; için sonuç yok</p>
               </div>
             ) : (
               <>
