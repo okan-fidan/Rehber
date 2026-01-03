@@ -425,18 +425,53 @@ TURKISH_CITIES = [
     'Tekirdağ', 'Tokat', 'Trabzon', 'Tunceli', 'Uşak', 'Van', 'Yalova', 'Yozgat', 'Zonguldak'
 ]
 
-# Dependency to verify Firebase token
+# Dependency to verify Firebase token with enhanced security
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         token = credentials.credentials
+        
+        # Basic token validation
+        if not token or len(token) < 50:
+            logger.warning("Invalid token format received")
+            raise HTTPException(status_code=401, detail="Geçersiz token formatı")
+        
+        # Verify with Firebase
         decoded_token = verify_firebase_token(token)
+        
+        if not decoded_token or 'uid' not in decoded_token:
+            logger.warning("Token verification failed - no uid")
+            raise HTTPException(status_code=401, detail="Geçersiz token")
+        
+        # Check if user is banned
+        user = await db.users.find_one({"uid": decoded_token['uid']})
+        if user and user.get('isBanned', False):
+            logger.info(f"Banned user attempted access: {decoded_token['uid']}")
+            raise HTTPException(status_code=403, detail="Hesabınız engellenmiş")
+        
         return decoded_token
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        logger.error(f"Token verification error: {type(e).__name__}")
+        raise HTTPException(status_code=401, detail="Kimlik doğrulama başarısız")
+
+# Check if user has admin permissions
+async def check_admin_permission(current_user: dict):
+    user = await db.users.find_one({"uid": current_user['uid']})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    is_admin = user.get('isAdmin', False) or user.get('email', '').lower() == ADMIN_EMAIL.lower()
+    if not is_admin:
+        logger.warning(f"Unauthorized admin access attempt: {current_user['uid']}")
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    return user
 
 # Routes
 @api_router.get("/")
-async def root():
+@limiter.limit("100/minute")
+async def root(request: Request):
     return {"message": "Network Solution API"}
 
 @api_router.post("/user/register")
