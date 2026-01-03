@@ -1398,8 +1398,8 @@ async def get_community(community_id: str, current_user: dict = Depends(get_curr
     community['isMember'] = current_user['uid'] in community.get('members', [])
     community['isSuperAdmin'] = current_user['uid'] in community.get('superAdmins', [])
     
-    # Alt grupları getir
-    subgroups = await db.subgroups.find({"communityId": community_id}).to_list(50)
+    # Alt grupları seviyeye göre sıralı getir
+    subgroups = await db.subgroups.find({"communityId": community_id}).sort("level", 1).to_list(50)
     for sg in subgroups:
         if '_id' in sg:
             del sg['_id']
@@ -1410,7 +1410,7 @@ async def get_community(community_id: str, current_user: dict = Depends(get_curr
     
     community['subGroupsList'] = subgroups
     
-    return community
+    return clean_doc(community)
 
 # Topluluğa katıl
 @api_router.post("/communities/{community_id}/join")
