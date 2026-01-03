@@ -17,6 +17,8 @@ import MyCommunities from "./pages/MyCommunities";
 import CommunityDetail from "./pages/CommunityDetail";
 import SubGroupChat from "./pages/SubGroupChat";
 import AdminPanel from "./pages/AdminPanel";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 
 // Components
 import BottomNav from "./components/BottomNav";
