@@ -475,10 +475,17 @@ async def root(request: Request):
     return {"message": "Network Solution API"}
 
 @api_router.post("/user/register")
-async def register_user(user_data: UserRegister, current_user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")  # Rate limit: 5 kayıt/dakika
+async def register_user(request: Request, user_data: UserRegister, current_user: dict = Depends(get_current_user)):
     existing_user = await db.users.find_one({"uid": current_user['uid']})
     if existing_user:
         return clean_doc(existing_user)
+    
+    # Sanitize input
+    user_data.firstName = sanitize_html(user_data.firstName)
+    user_data.lastName = sanitize_html(user_data.lastName)
+    if user_data.occupation:
+        user_data.occupation = sanitize_html(user_data.occupation)
     
     is_admin = user_data.email.lower() == ADMIN_EMAIL.lower()
     user_groups = []
@@ -517,6 +524,8 @@ async def register_user(user_data: UserRegister, current_user: dict = Depends(ge
     user_dict['communities'] = user_communities
     
     await db.users.insert_one(user_dict)
+    
+    logger.info(f"New user registered: {current_user['uid']}")
     
     # Eski grup sistemini de destekle (geriye uyumluluk)
     await ensure_default_groups_exist(current_user['uid'], f"{user_data.firstName} {user_data.lastName}", is_admin)
