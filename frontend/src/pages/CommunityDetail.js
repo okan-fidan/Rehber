@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   ArrowLeft, Users, Plus, Crown, UserCheck, 
-  Megaphone, ChevronRight, Loader2,
+  Megaphone, Loader2,
   Lock, Globe, MessageCircle, UserPlus, Settings,
-  ArrowUp, ArrowDown, Edit, Camera, X
+  ArrowUp, ArrowDown, Edit, X, Check, UserMinus,
+  Bell, Shield
 } from 'lucide-react';
 import {
   Dialog,
@@ -37,13 +38,23 @@ export default function CommunityDetail() {
   const [newAnnouncement, setNewAnnouncement] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
-  // Yeni state'ler - üye yönetimi ve grup düzenleme
+  // Üye yönetimi state'leri
   const [membersDialog, setMembersDialog] = useState(false);
   const [selectedSubgroup, setSelectedSubgroup] = useState(null);
   const [subgroupMembers, setSubgroupMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [editGroupDialog, setEditGroupDialog] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: '', description: '', imageUrl: '' });
+  
+  // Yeni: İstek yönetimi state'leri
+  const [requestsDialog, setRequestsDialog] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  
+  // Yeni: Topluluk üyelerinden yönetici seçme
+  const [addAdminDialog, setAddAdminDialog] = useState(false);
+  const [communityMembers, setCommunityMembers] = useState([]);
+  const [loadingCommunityMembers, setLoadingCommunityMembers] = useState(false);
 
   useEffect(() => {
     fetchCommunity();
@@ -97,6 +108,50 @@ export default function CommunityDetail() {
       toast({ title: "Hata", description: "Üyeler yüklenemedi", variant: "destructive" });
     } finally {
       setLoadingMembers(false);
+    }
+  };
+
+  const fetchPendingRequests = async (subgroupId) => {
+    setLoadingRequests(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${subgroupId}/pending-requests`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setPendingRequests(data);
+    } catch (error) {
+      console.error('İstekler yüklenirken hata:', error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const fetchCommunityMembers = async () => {
+    setLoadingCommunityMembers(true);
+    try {
+      const token = await user.getIdToken();
+      // Topluluk üyelerini getir
+      const memberIds = community?.members || [];
+      const members = [];
+      for (const uid of memberIds.slice(0, 50)) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/users/${uid}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const userData = await res.json();
+            members.push(userData);
+          }
+        } catch (e) {
+          // Skip failed fetches
+        }
+      }
+      setCommunityMembers(members);
+    } catch (error) {
+      console.error('Topluluk üyeleri yüklenirken hata:', error);
+    } finally {
+      setLoadingCommunityMembers(false);
     }
   };
 
@@ -250,6 +305,125 @@ export default function CommunityDetail() {
     }
   };
 
+  // Katılma isteği gönder
+  const handleRequestJoin = async (subgroupId) => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${subgroupId}/request-join`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Başarılı", description: "Katılma isteği gönderildi" });
+        fetchCommunity();
+      } else {
+        toast({ title: "Hata", description: data.detail || "İstek gönderilemedi", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "İstek gönderilemedi", variant: "destructive" });
+    }
+  };
+
+  // İstek onayla
+  const handleApproveRequest = async (requestId) => {
+    if (!selectedSubgroup) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/approve-request/${requestId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        toast({ title: "Başarılı", description: "Katılma isteği onaylandı" });
+        fetchPendingRequests(selectedSubgroup.id);
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "Onaylama başarısız", variant: "destructive" });
+    }
+  };
+
+  // İstek reddet
+  const handleRejectRequest = async (requestId) => {
+    if (!selectedSubgroup) return;
+    try {
+      const token = await user.getIdToken();
+      await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/reject-request/${requestId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      toast({ title: "Başarılı", description: "Katılma isteği reddedildi" });
+      fetchPendingRequests(selectedSubgroup.id);
+    } catch (error) {
+      toast({ title: "Hata", description: "Reddetme başarısız", variant: "destructive" });
+    }
+  };
+
+  // Yönetici ekle
+  const handleAddAdmin = async (userId) => {
+    if (!selectedSubgroup) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/add-admin/${userId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Başarılı", description: data.message });
+        setAddAdminDialog(false);
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      } else {
+        toast({ title: "Hata", description: data.detail || "Yönetici eklenemedi", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "Yönetici eklenemedi", variant: "destructive" });
+    }
+  };
+
+  // Yönetici yetkisi al
+  const handleRemoveAdmin = async (userId) => {
+    if (!selectedSubgroup) return;
+    if (!window.confirm('Yönetici yetkisini almak istediğinize emin misiniz?')) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/remove-admin/${userId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        toast({ title: "Başarılı", description: "Yönetici yetkisi alındı" });
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "İşlem başarısız", variant: "destructive" });
+    }
+  };
+
+  // Üye çıkar
+  const handleRemoveMember = async (userId) => {
+    if (!selectedSubgroup) return;
+    if (!window.confirm('Üyeyi gruptan çıkarmak istediğinize emin misiniz?')) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/api/subgroups/${selectedSubgroup.id}/remove-member/${userId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        toast({ title: "Başarılı", description: "Üye gruptan çıkarıldı" });
+        fetchSubgroupMembers(selectedSubgroup.id);
+        fetchCommunity();
+      }
+    } catch (error) {
+      toast({ title: "Hata", description: "İşlem başarısız", variant: "destructive" });
+    }
+  };
+
   const openMembersDialog = (subgroup) => {
     setSelectedSubgroup(subgroup);
     fetchSubgroupMembers(subgroup.id);
@@ -264,6 +438,18 @@ export default function CommunityDetail() {
       imageUrl: subgroup.imageUrl || ''
     });
     setEditGroupDialog(true);
+  };
+
+  const openRequestsDialog = (subgroup) => {
+    setSelectedSubgroup(subgroup);
+    fetchPendingRequests(subgroup.id);
+    setRequestsDialog(true);
+  };
+
+  const openAddAdminDialog = (subgroup) => {
+    setSelectedSubgroup(subgroup);
+    fetchSubgroupMembers(subgroup.id);
+    setAddAdminDialog(true);
   };
 
   const isSuperAdmin = community?.isSuperAdmin || userProfile?.isAdmin || userProfile?.email?.toLowerCase() === 'metaticaretim@gmail.com';
@@ -284,7 +470,6 @@ export default function CommunityDetail() {
     );
   }
 
-  // Seviye renklerini belirle
   const getLevelColor = (level) => {
     switch(level) {
       case 1: return 'bg-green-500';
@@ -293,6 +478,14 @@ export default function CommunityDetail() {
       case 4: return 'bg-yellow-500';
       default: return 'bg-gray-500';
     }
+  };
+
+  // Bekleyen istek sayısını hesapla
+  const getTotalPendingRequests = () => {
+    return community.subGroupsList?.reduce((total, sg) => {
+      const pending = sg.pendingRequests?.filter(r => r.status === 'pending')?.length || 0;
+      return total + pending;
+    }, 0) || 0;
   };
 
   return (
@@ -353,7 +546,7 @@ export default function CommunityDetail() {
             <div className="flex gap-2 mb-4 flex-wrap">
               <Dialog open={newGroupDialog} onOpenChange={setNewGroupDialog}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="gap-2" data-testid="create-subgroup-btn">
+                  <Button size="sm" className="gap-2">
                     <Plus className="w-4 h-4" />
                     Alt Grup Ekle
                   </Button>
@@ -427,6 +620,13 @@ export default function CommunityDetail() {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              {getTotalPendingRequests() > 0 && (
+                <div className="bg-orange-500/20 text-orange-400 px-3 py-1 rounded-full text-sm flex items-center gap-1">
+                  <Bell className="w-4 h-4" />
+                  {getTotalPendingRequests()} bekleyen istek
+                </div>
+              )}
             </div>
           )}
 
@@ -468,104 +668,141 @@ export default function CommunityDetail() {
                 <p className="text-gray-400">Henüz alt grup yok</p>
               </div>
             ) : (
-              community.subGroupsList?.map((subgroup) => (
-                <div
-                  key={subgroup.id}
-                  className="bg-[#17212b] rounded-xl p-4 hover:bg-[#1e2c3a] transition-colors"
-                  data-testid={`subgroup-${subgroup.id}`}
-                >
-                  <div className="flex items-center gap-4">
-                    {/* Grup Fotoğrafı */}
-                    <div className={`w-14 h-14 ${getLevelColor(subgroup.level)} rounded-full flex items-center justify-center overflow-hidden`}>
-                      {subgroup.imageUrl ? (
-                        <img src={subgroup.imageUrl} alt={subgroup.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-2xl">{subgroup.name?.charAt(0)}</span>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-white font-semibold truncate">{subgroup.name}</h3>
-                        {subgroup.level && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${getLevelColor(subgroup.level)} text-white`}>
-                            Seviye {subgroup.level}
-                          </span>
-                        )}
-                        {subgroup.isMember && (
-                          <UserCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
-                        )}
-                        {subgroup.isGroupAdmin && (
-                          <Crown className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+              community.subGroupsList?.map((subgroup) => {
+                const pendingCount = subgroup.pendingRequests?.filter(r => r.status === 'pending')?.length || 0;
+                const isGroupAdmin = subgroup.isGroupAdmin || isSuperAdmin;
+                
+                return (
+                  <div
+                    key={subgroup.id}
+                    className="bg-[#17212b] rounded-xl p-4 hover:bg-[#1e2c3a] transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Grup Fotoğrafı */}
+                      <div className={`w-14 h-14 ${getLevelColor(subgroup.level)} rounded-full flex items-center justify-center overflow-hidden`}>
+                        {subgroup.imageUrl ? (
+                          <img src={subgroup.imageUrl} alt={subgroup.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-2xl text-white">{subgroup.name?.charAt(0)}</span>
                         )}
                       </div>
-                      {subgroup.description && (
-                        <p className="text-sm text-gray-400 truncate">{subgroup.description}</p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-1">{subgroup.memberCount} üye</p>
-                    </div>
 
-                    <div className="flex items-center gap-1 flex-wrap justify-end">
-                      {/* Yönetici Ayarları */}
-                      {(isSuperAdmin || subgroup.isGroupAdmin) && (
-                        <>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-white font-semibold truncate">{subgroup.name}</h3>
+                          {subgroup.level && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${getLevelColor(subgroup.level)} text-white`}>
+                              Lv.{subgroup.level}
+                            </span>
+                          )}
+                          {!subgroup.isPublic && <Lock className="w-3 h-3 text-gray-500" />}
+                          {subgroup.isMember && <UserCheck className="w-4 h-4 text-green-500" />}
+                          {subgroup.isGroupAdmin && <Crown className="w-4 h-4 text-yellow-500" />}
+                        </div>
+                        {subgroup.description && (
+                          <p className="text-sm text-gray-400 truncate">{subgroup.description}</p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">{subgroup.memberCount} üye</p>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {/* Yönetici İşlemleri */}
+                        {isGroupAdmin && (
+                          <>
+                            {pendingCount > 0 && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openRequestsDialog(subgroup)}
+                                className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 p-2 relative"
+                                title="Bekleyen İstekler"
+                              >
+                                <Bell className="w-4 h-4" />
+                                <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                  {pendingCount}
+                                </span>
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openMembersDialog(subgroup)}
+                              className="text-gray-400 hover:text-white p-2"
+                              title="Üyeleri Yönet"
+                            >
+                              <Users className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openAddAdminDialog(subgroup)}
+                              className="text-gray-400 hover:text-white p-2"
+                              title="Yönetici Ekle"
+                            >
+                              <Shield className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openEditDialog(subgroup)}
+                              className="text-gray-400 hover:text-white p-2"
+                              title="Grubu Düzenle"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </>
+                        )}
+                        
+                        {/* Üye İşlemleri */}
+                        {subgroup.isMember ? (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            onClick={() => openMembersDialog(subgroup)}
-                            className="text-gray-400 hover:text-white p-2"
-                            title="Üyeleri Yönet"
+                            onClick={() => navigate(`/subgroup/${subgroup.id}`)}
+                            className="gap-1"
                           >
-                            <Users className="w-4 h-4" />
+                            <MessageCircle className="w-4 h-4" />
+                            Gir
                           </Button>
+                        ) : subgroup.isPublic ? (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            onClick={() => openEditDialog(subgroup)}
-                            className="text-gray-400 hover:text-white p-2"
-                            title="Grubu Düzenle"
+                            variant="outline"
+                            onClick={async () => {
+                              try {
+                                const token = await user.getIdToken();
+                                await fetch(`${BACKEND_URL}/api/subgroups/${subgroup.id}/join`, {
+                                  method: 'POST',
+                                  headers: { 'Authorization': `Bearer ${token}` }
+                                });
+                                toast({ title: "Başarılı", description: "Gruba katıldınız" });
+                                fetchCommunity();
+                              } catch (error) {
+                                toast({ title: "Hata", description: "Katılım başarısız", variant: "destructive" });
+                              }
+                            }}
                           >
-                            <Edit className="w-4 h-4" />
+                            <UserPlus className="w-4 h-4" />
                           </Button>
-                        </>
-                      )}
-                      
-                      {subgroup.isMember ? (
-                        <Button
-                          size="sm"
-                          onClick={() => navigate(`/subgroup/${subgroup.id}`)}
-                          className="gap-1"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          Gir
-                        </Button>
-                      ) : subgroup.isPublic ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              const token = await user.getIdToken();
-                              await fetch(`${BACKEND_URL}/api/subgroups/${subgroup.id}/join`, {
-                                method: 'POST',
-                                headers: { 'Authorization': `Bearer ${token}` }
-                              });
-                              toast({ title: "Başarılı", description: "Gruba katıldınız" });
-                              fetchCommunity();
-                            } catch (error) {
-                              toast({ title: "Hata", description: "Katılım başarısız", variant: "destructive" });
-                            }
-                          }}
-                        >
-                          <UserPlus className="w-4 h-4" />
-                        </Button>
-                      ) : (
-                        <Lock className="w-5 h-5 text-gray-500" />
-                      )}
+                        ) : subgroup.hasPendingRequest ? (
+                          <span className="text-xs text-orange-400 px-2 py-1 bg-orange-500/20 rounded">
+                            İstek Gönderildi
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRequestJoin(subgroup.id)}
+                            className="gap-1 text-orange-400 border-orange-400 hover:bg-orange-400/10"
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            İstek Gönder
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -621,15 +858,15 @@ export default function CommunityDetail() {
                     {member.profileImageUrl ? (
                       <img src={member.profileImageUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-white font-semibold">
+                      <span className="text-white font-semibold text-sm">
                         {member.firstName?.charAt(0)}{member.lastName?.charAt(0)}
                       </span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-medium truncate">
+                    <p className="text-white font-medium truncate flex items-center gap-1">
                       {member.firstName} {member.lastName}
-                      {member.isGroupAdmin && <Crown className="w-4 h-4 text-yellow-500 inline ml-1" />}
+                      {member.isGroupAdmin && <Crown className="w-4 h-4 text-yellow-500" />}
                     </p>
                     <p className="text-gray-500 text-xs truncate">{member.city}</p>
                   </div>
@@ -640,7 +877,7 @@ export default function CommunityDetail() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handlePromoteMember(member.uid)}
-                          className="text-green-500 hover:text-green-400 hover:bg-green-500/10 p-2"
+                          className="text-green-500 hover:text-green-400 hover:bg-green-500/10 p-1"
                           title="Üst Gruba Yükselt"
                         >
                           <ArrowUp className="w-4 h-4" />
@@ -651,13 +888,142 @@ export default function CommunityDetail() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDemoteMember(member.uid)}
-                          className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2"
+                          className="text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10 p-1"
                           title="Alt Gruba Düşür"
                         >
                           <ArrowDown className="w-4 h-4" />
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleRemoveMember(member.uid)}
+                        className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-1"
+                        title="Gruptan Çıkar"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </Button>
                     </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bekleyen İstekler Dialog */}
+      <Dialog open={requestsDialog} onOpenChange={setRequestsDialog}>
+        <DialogContent className="bg-[#17212b] border-gray-700 max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Bell className="w-5 h-5 text-orange-400" />
+              Bekleyen Katılma İstekleri
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {loadingRequests ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-[#4A90E2]" />
+              </div>
+            ) : pendingRequests.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">Bekleyen istek yok</p>
+            ) : (
+              pendingRequests.map((request) => (
+                <div key={request.id} className="flex items-center gap-3 p-3 bg-[#0e1621] rounded-lg">
+                  <div className="w-10 h-10 bg-[#4A90E2] rounded-full flex items-center justify-center overflow-hidden">
+                    {request.userImage ? (
+                      <img src={request.userImage} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-semibold text-sm">
+                        {request.userName?.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium truncate">{request.userName}</p>
+                    <p className="text-gray-500 text-xs">{request.userCity}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleApproveRequest(request.id)}
+                      className="text-green-500 hover:text-green-400 hover:bg-green-500/10 p-2"
+                      title="Onayla"
+                    >
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRejectRequest(request.id)}
+                      className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2"
+                      title="Reddet"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Yönetici Ekleme Dialog */}
+      <Dialog open={addAdminDialog} onOpenChange={setAddAdminDialog}>
+        <DialogContent className="bg-[#17212b] border-gray-700 max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Shield className="w-5 h-5 text-yellow-500" />
+              Yönetici Ekle/Çıkar
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {loadingMembers ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-[#4A90E2]" />
+              </div>
+            ) : subgroupMembers.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">Henüz üye yok</p>
+            ) : (
+              subgroupMembers.map((member) => (
+                <div key={member.uid} className="flex items-center gap-3 p-3 bg-[#0e1621] rounded-lg">
+                  <div className="w-10 h-10 bg-[#4A90E2] rounded-full flex items-center justify-center overflow-hidden">
+                    {member.profileImageUrl ? (
+                      <img src={member.profileImageUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-semibold text-sm">
+                        {member.firstName?.charAt(0)}{member.lastName?.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium truncate flex items-center gap-1">
+                      {member.firstName} {member.lastName}
+                      {member.isGroupAdmin && <Crown className="w-4 h-4 text-yellow-500" />}
+                    </p>
+                    <p className="text-gray-500 text-xs truncate">{member.city}</p>
+                  </div>
+                  {member.uid !== user?.uid && (
+                    member.isGroupAdmin ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRemoveAdmin(member.uid)}
+                        className="text-red-400 border-red-400 hover:bg-red-400/10"
+                      >
+                        Yetkiyi Al
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddAdmin(member.uid)}
+                      >
+                        Yönetici Yap
+                      </Button>
+                    )
                   )}
                 </div>
               ))
