@@ -354,7 +354,7 @@ export default function CommunityDetail() {
                 <p className="text-gray-400">Henüz alt grup yok</p>
                 {isSuperAdmin && (
                   <p className="text-gray-500 text-sm mt-2">
-                    Yukarıdaki "Alt Grup Ekle" butonunu kullanarak yeni grup oluşturabilirsiniz.
+                    Yukarıdaki &quot;Alt Grup Ekle&quot; butonunu kullanarak yeni grup oluşturabilirsiniz.
                   </p>
                 )}
               </div>
