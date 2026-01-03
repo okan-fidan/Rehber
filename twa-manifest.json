@@ -1,0 +1,58 @@
+{
+  "packageId": "com.networksolution.app",
+  "host": "YOUR_DOMAIN_HERE",
+  "name": "Network Solution",
+  "launcherName": "NetSolution",
+  "display": "standalone",
+  "themeColor": "#4A90E2",
+  "themeColorDark": "#357ABD",
+  "navigationColor": "#0e1621",
+  "navigationColorDark": "#0e1621",
+  "navigationDividerColor": "#0e1621",
+  "navigationDividerColorDark": "#0e1621",
+  "backgroundColor": "#0e1621",
+  "enableNotifications": true,
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "startUrl": "/",
+  "iconUrl": "/icons/icon-512x512.png",
+  "maskableIconUrl": "/icons/icon-512x512.png",
+  "monochromeIconUrl": "/icons/icon-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [
+    {
+      "name": "Topluluklar",
+      "shortName": "Topluluklar",
+      "url": "/communities",
+      "chosenIconUrl": "/icons/icon-96x96.png"
+    },
+    {
+      "name": "Mesajlar",
+      "shortName": "Mesajlar", 
+      "url": "/messages",
+      "chosenIconUrl": "/icons/icon-96x96.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": false
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableGooglePlayAppLinks": true,
+  "orientation": "portrait"
+}
