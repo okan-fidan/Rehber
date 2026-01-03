@@ -3024,20 +3024,65 @@ async def ensure_admin_in_all_communities():
 # Include the router in the main app
 app.include_router(api_router)
 
+# CORS Configuration - Güvenli ayarlar
+# Production'da sadece izin verilen originler eklenmeli
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://localhost:3000",
+]
+
+# Environment'dan ek origin'ler ekle
+if os.environ.get('ALLOWED_ORIGINS'):
+    ALLOWED_ORIGINS.extend(os.environ.get('ALLOWED_ORIGINS', '').split(','))
+
+# Preview URL pattern için wildcard
+import re
+PREVIEW_URL_PATTERN = r'^https://[\w-]+\.preview\.emergentagent\.com$'
+
+def is_allowed_origin(origin: str) -> bool:
+    if origin in ALLOWED_ORIGINS:
+        return True
+    if re.match(PREVIEW_URL_PATTERN, origin):
+        return True
+    return False
+
+# Custom CORS middleware for better security
+class SecureCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin", "")
+        
+        # Preflight request
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            if origin and is_allowed_origin(origin):
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept"
+                response.headers["Access-Control-Max-Age"] = "86400"
+            return response
+        
+        response = await call_next(request)
+        
+        # Add CORS headers for allowed origins
+        if origin and is_allowed_origin(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        
+        return response
+
+# Add secure CORS middleware (production modunda aktif et)
+# app.add_middleware(SecureCORSMiddleware)
+
+# Development CORS - Production'da kapatılmalı
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # Production'da ALLOWED_ORIGINS kullanılmalı
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    max_age=86400,  # 24 saat CORS preflight cache
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_event():
