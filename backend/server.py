@@ -177,6 +177,31 @@ class UserProfile(BaseModel):
     groups: List[str] = []
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
+    @validator('email')
+    def validate_email_format(cls, v):
+        if not validate_email(v):
+            raise ValueError('Geçersiz email formatı')
+        return v.lower().strip()
+    
+    @validator('firstName', 'lastName')
+    def validate_names(cls, v):
+        v = sanitize_html(v.strip())
+        if len(v) < 2 or len(v) > 50:
+            raise ValueError('İsim 2-50 karakter arasında olmalı')
+        return v
+    
+    @validator('phone')
+    def validate_phone_format(cls, v):
+        if v and not validate_phone(v):
+            raise ValueError('Geçersiz telefon numarası')
+        return v
+    
+    @validator('profileImageUrl', 'cvUrl')
+    def validate_urls(cls, v):
+        if v and not validate_url(v):
+            raise ValueError('Geçersiz URL formatı')
+        return v
+
 class UserRegister(BaseModel):
     email: str
     firstName: str
@@ -184,6 +209,40 @@ class UserRegister(BaseModel):
     phone: Optional[str] = None
     city: str
     occupation: Optional[str] = None
+
+    @validator('email')
+    def validate_email_format(cls, v):
+        if not validate_email(v):
+            raise ValueError('Geçersiz email formatı')
+        return v.lower().strip()
+    
+    @validator('firstName', 'lastName')
+    def validate_names(cls, v):
+        v = sanitize_html(v.strip())
+        if len(v) < 2 or len(v) > 50:
+            raise ValueError('İsim 2-50 karakter arasında olmalı')
+        return v
+    
+    @validator('city')
+    def validate_city(cls, v):
+        v = sanitize_html(v.strip())
+        if len(v) < 2 or len(v) > 50:
+            raise ValueError('Şehir 2-50 karakter arasında olmalı')
+        return v
+    
+    @validator('phone')
+    def validate_phone_format(cls, v):
+        if v and not validate_phone(v):
+            raise ValueError('Geçersiz telefon numarası')
+        return v
+    
+    @validator('occupation')
+    def validate_occupation(cls, v):
+        if v:
+            v = sanitize_html(v.strip())
+            if len(v) > 100:
+                raise ValueError('Meslek 100 karakterden az olmalı')
+        return v
 
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -218,6 +277,26 @@ class Message(BaseModel):
     editedAt: Optional[datetime] = None
     # Okundu bilgisi
     status: str = "sent"  # sent, delivered, read
+
+    @validator('content')
+    def validate_content(cls, v):
+        v = sanitize_input(v, max_length=5000)
+        if not v:
+            raise ValueError('Mesaj içeriği boş olamaz')
+        return v
+    
+    @validator('type')
+    def validate_type(cls, v):
+        allowed_types = ['text', 'image', 'video', 'audio', 'file', 'location', 'contact']
+        if v not in allowed_types:
+            raise ValueError(f'Geçersiz mesaj tipi. İzin verilen: {allowed_types}')
+        return v
+    
+    @validator('fileUrl')
+    def validate_file_url(cls, v):
+        if v and not validate_url(v):
+            raise ValueError('Geçersiz dosya URL\'i')
+        return v
     deliveredTo: List[str] = []  # İletilen kullanıcılar
     readBy: List[str] = []  # Okuyan kullanıcılar
     timestamp: datetime = Field(default_factory=datetime.utcnow)
