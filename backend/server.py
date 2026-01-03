@@ -313,7 +313,7 @@ async def register_user(user_data: UserRegister, current_user: dict = Depends(ge
     # Response için _id'yi kaldır (insert sonrası eklenir)
     user_dict.pop('_id', None)
     
-    return user_dict
+    return clean_doc(user_dict)
 
 async def ensure_default_groups_exist(creator_uid: str, creator_name: str, is_admin: bool):
     turkey_group = await db.groups.find_one({"id": TURKEY_GROUP_ID})
@@ -377,13 +377,7 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
             "groups": [],
             "needsRegistration": True
         }
-    # MongoDB ObjectId'yi kaldır ve datetime'ları string'e çevir
-    user.pop('_id', None)
-    if 'createdAt' in user and hasattr(user['createdAt'], 'isoformat'):
-        user['createdAt'] = user['createdAt'].isoformat()
-    if 'restrictedUntil' in user and user['restrictedUntil'] and hasattr(user['restrictedUntil'], 'isoformat'):
-        user['restrictedUntil'] = user['restrictedUntil'].isoformat()
-    return user
+    return clean_doc(user)
 
 @api_router.put("/user/profile")
 async def update_user_profile(updates: dict, current_user: dict = Depends(get_current_user)):
