@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from firebase_config import verify_firebase_token
 import socketio
+from bson import ObjectId
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -39,6 +40,27 @@ ADMIN_EMAIL = "metaticaretim@gmail.com"
 # Default groups
 TURKEY_GROUP_ID = "turkiye-grubu"
 BURSA_GROUP_ID = "bursa-grubu"
+
+# Helper function to clean MongoDB documents for JSON serialization
+def clean_doc(doc):
+    """Remove _id and convert datetime objects for JSON serialization"""
+    if doc is None:
+        return None
+    if isinstance(doc, list):
+        return [clean_doc(d) for d in doc]
+    if isinstance(doc, dict):
+        doc.pop('_id', None)
+        for key, value in doc.items():
+            if isinstance(value, datetime):
+                doc[key] = value.isoformat()
+            elif isinstance(value, ObjectId):
+                doc[key] = str(value)
+            elif isinstance(value, dict):
+                doc[key] = clean_doc(value)
+            elif isinstance(value, list):
+                doc[key] = [clean_doc(item) if isinstance(item, dict) else item for item in value]
+        return doc
+    return doc
 
 # Models
 class UserProfile(BaseModel):
