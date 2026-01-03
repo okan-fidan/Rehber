@@ -1353,7 +1353,7 @@ async def initialize_city_communities():
                         {"$addToSet": {"subGroups": sg_id}}
                     )
     
-    logging.info(f"✅ Şehir toplulukları başarıyla kontrol edildi/oluşturuldu")
+    logging.info("✅ Şehir toplulukları başarıyla kontrol edildi/oluşturuldu")
 
 # Tüm toplulukları getir
 @api_router.get("/communities")
